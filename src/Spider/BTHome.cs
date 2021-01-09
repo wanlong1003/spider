@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -15,7 +16,7 @@ namespace Spider
     /// BT之家数据爬取
     /// http://www.415.net/
     /// </summary>
-    class BTHome
+    public class BTHome
     {
         private IHttpClientFactory _httpClientFactory;
         private ILogger _logger;
@@ -24,6 +25,42 @@ namespace Spider
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
+        }
+
+        public async Task Start(int startPage, int endPage)
+        {
+            var stopWatch = new Stopwatch();
+            for (var i = startPage; i <= endPage; i++)
+            {
+                stopWatch.Restart();
+                CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+                cancellationTokenSource.CancelAfter(300000);
+                try
+                {
+                    var list = await CrawlList(i, cancellationTokenSource.Token);
+                    var tasks = new List<Task>();
+                    foreach (var item in list)
+                    {
+                        try
+                        {
+                            var task = DownLoadTorrent(item.Title, item.Url, cancellationTokenSource.Token);
+                            tasks.Add(task);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, ex.Message);
+                        }
+                    }
+                    Task.WaitAll(tasks.ToArray(), cancellationTokenSource.Token);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, ex.Message);
+                }
+                _logger.LogInformation($"第{i}页耗时: {stopWatch.Elapsed.TotalSeconds} 秒");
+                await Task.Delay(5000);
+            }
+            stopWatch.Stop();
         }
 
         public async Task<IEnumerable<(string Title, string Url)>> CrawlList(int pageIndex, CancellationToken cancellationToken)
